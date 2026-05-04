@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "809426082926",
+    "project_id": "finalfa-aa1e1",
+    "storage_bucket": "finalfa-aa1e1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:809426082926:android:2fbfae84a0acebbd6d5a7f",
+        "android_client_info": {
+          "package_name": "com.example.finalfa"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBSEkO55CjVFhosZBAmrHNCOW9pLNQl17o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

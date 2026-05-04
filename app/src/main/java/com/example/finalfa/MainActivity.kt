@@ -23,11 +23,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var binding: ActivityMainBinding
     private var tts: TextToSpeech? = null
     private lateinit var generativeModel: GenerativeModel
-
-    // Флаг языка: "en" или "kk"
     private var currentLanguage = "en"
-
-    // Память контекста (последние ответы для "Short-term memory")
     private val contextHistory = mutableListOf<String>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -35,38 +31,24 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // 1. Инициализация Gemini ИИ
         generativeModel = GenerativeModel(
             modelName = "gemini-1.5-flash",
             apiKey = "AIzaSyBW7q5A91xPRTBV4JPtRvv2zpuemt0-I9k"
         )
 
-        // 2. Инициализация Озвучки (TTS)
         tts = TextToSpeech(this, this)
 
-        // 3. Запуск фоновой службы (Wake-word listener)
+        // Запуск службы в фоне
         val serviceIntent = Intent(this, VoiceActivationService::class.java)
         ContextCompat.startForegroundService(this, serviceIntent)
 
-        // 4. Проверка разрешений и запуск камеры
         if (allPermissionsGranted()) {
             startCamera()
         } else {
-            ActivityCompat.requestPermissions(
-                this, arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 10
-            )
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 10)
         }
 
-        // Кнопка анализа
-        binding.btnAnalyze.setOnClickListener {
-            analyzeScene()
-        }
-
-        // Кнопка переключения языка (добавь её в макет, если хочешь)
-        binding.tvAiStatus.setOnClickListener {
-            currentLanguage = if (currentLanguage == "en") "kk" else "en"
-            Toast.makeText(this, "Language: $currentLanguage", Toast.LENGTH_SHORT).show()
-        }
+        binding.btnAnalyze.setOnClickListener { analyzeScene() }
     }
 
     private fun startCamera() {
@@ -78,29 +60,23 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             }
             try {
                 cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(
-                    this, androidx.camera.core.CameraSelector.DEFAULT_BACK_CAMERA, preview
-                )
+                cameraProvider.bindToLifecycle(this, androidx.camera.core.CameraSelector.DEFAULT_BACK_CAMERA, preview)
             } catch (e: Exception) {
                 Toast.makeText(this, "Camera error", Toast.LENGTH_SHORT).show()
             }
         }, ContextCompat.getMainExecutor(this))
     }
 
-    // ОБЪЕДИНЕННАЯ ФУНКЦИЯ АНАЛИЗА
     private fun analyzeScene() {
         val bitmap = binding.viewFinder.bitmap ?: return
         binding.btnAnalyze.isEnabled = false
-        binding.tvAiStatus.text = "Analyzing ($currentLanguage)..."
+        binding.tvAiStatus.text = "Analyzing..."
 
-        // Собираем историю для контекста (память)
         val historyText = contextHistory.takeLast(5).joinToString(". ")
-
-        // Формируем промпт в зависимости от языка
         val prompt = if (currentLanguage == "kk") {
-            "Контекст: $historyText. Алдыңда не тұрғанын қазақша қысқаша сипаттап бер. Кедергілер мен мәтінге назар аудар."
+            "Контекст: $historyText. Алдыңда не тұрғанын қазақша сипатта."
         } else {
-            "Context: $historyText. Describe what's in front of the camera in English briefly. Focus on obstacles and text."
+            "Context: $historyText. Describe what is in front of the camera in English briefly."
         }
 
         lifecycleScope.launch {
@@ -110,16 +86,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     text(prompt)
                 })
                 val result = response.text ?: ""
-
-                // Добавляем результат в память (sliding window)
                 contextHistory.add(result)
-                if (contextHistory.size > 20) contextHistory.removeAt(0)
-
-                // Озвучиваем ответ
                 speak(result)
                 binding.tvAiStatus.text = "System: Ready"
             } catch (e: Exception) {
-                speak("Error connecting to AI")
+                Toast.makeText(this@MainActivity, "AI Error", Toast.LENGTH_SHORT).show()
             } finally {
                 binding.btnAnalyze.isEnabled = true
             }
@@ -127,35 +98,23 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun speak(text: String) {
-        // Установка языка для озвучки
-        if (currentLanguage == "kk") {
-            tts?.language = Locale("kk", "KZ")
-        } else {
-            tts?.language = Locale.US
-        }
+        tts?.language = if (currentLanguage == "kk") Locale("kk", "KZ") else Locale.US
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "")
     }
 
     override fun onInit(status: Int) {
-        if (status == TextToSpeech.SUCCESS) {
-            tts?.language = Locale.US
-        }
+        if (status == TextToSpeech.SUCCESS) tts?.language = Locale.US
     }
 
-    private fun allPermissionsGranted() = ContextCompat.checkSelfPermission(
-        this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+    private fun allPermissionsGranted() = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
 
     override fun onResume() {
         super.onResume()
-        // Если служба активировала приложение через Wake-word
-        if (intent.getBooleanExtra("auto_analyze", false)) {
-            analyzeScene()
-        }
+        if (intent.getBooleanExtra("auto_analyze", false)) analyzeScene()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        tts?.stop()
         tts?.shutdown()
     }
 }

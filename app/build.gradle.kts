@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     id("kotlin-kapt")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -19,15 +20,23 @@ android {
 
     buildFeatures {
         viewBinding = true
-        dataBinding = false // Явно отключаем, чтобы не было ошибки из лога
+        dataBinding = false
     }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
     kotlinOptions {
         jvmTarget = "17"
+    }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "META-INF/DEPENDENCIES"
+        }
     }
 }
 
@@ -37,8 +46,12 @@ dependencies {
     implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
 
-    // Gemini AI - Если 0.9.0 не качает, попробуй 0.7.0 (но 0.9.0 новее)
-    implementation("com.google.ai.client.generativeai:generative-ai:0.9.0")
+    // Gemini
+    implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
+
+    // ListenableFuture — нужен для CameraX
+    implementation("androidx.concurrent:concurrent-futures-ktx:1.1.0")
+    implementation("com.google.guava:guava:32.1.3-android")
 
     // Firebase
     implementation(platform("com.google.firebase:firebase-bom:33.0.0"))
@@ -57,4 +70,9 @@ dependencies {
     implementation("androidx.room:room-runtime:$room_version")
     implementation("androidx.room:room-ktx:$room_version")
     kapt("androidx.room:room-compiler:$room_version")
+
+    // Тесты
+    testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test.ext:junit:1.1.5")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
 }
