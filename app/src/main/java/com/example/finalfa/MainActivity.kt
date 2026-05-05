@@ -4,10 +4,16 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
+import android.util.Log
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ImageProxy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -23,8 +29,13 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var binding: ActivityMainBinding
     private var tts: TextToSpeech? = null
     private lateinit var generativeModel: GenerativeModel
-    private var currentLanguage = "en"
+    private var imageCapture: ImageCapture? = null
+
+    // Переключение только между RU и EN
+    private var currentLanguage = "ru"
+
     private val contextHistory = mutableListOf<String>()
+    private var totalWordsInMemory = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,45 +49,73 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         tts = TextToSpeech(this, this)
 
-        // Запуск службы в фоне
-        val serviceIntent = Intent(this, VoiceActivationService::class.java)
-        ContextCompat.startForegroundService(this, serviceIntent)
+        try {
+            val serviceIntent = Intent(this, VoiceActivationService::class.java)
+            ContextCompat.startForegroundService(this, serviceIntent)
+        } catch (e: Exception) {
+            Log.e("SERVICE_ERROR", "Wake-word service failed")
+        }
 
-        if (allPermissionsGranted()) {
-            startCamera()
-        } else {
+        if (!allPermissionsGranted()) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 10)
         }
 
-        binding.btnAnalyze.setOnClickListener { analyzeScene() }
+        binding.btnAnalyze.setOnClickListener { startCaptureProcess() }
+
+        binding.btnSimulateVoice.setOnClickListener {
+            val text = binding.etDebugVoice.text.toString()
+            if (text.isNotEmpty()) {
+                processVoiceCommand(text)
+                binding.etDebugVoice.text.clear()
+            }
+        }
+
+        binding.btnOpenProfile.setOnClickListener {
+            startActivity(Intent(this, ProfileActivity::class.java))
+        }
+
+        // Логика переключения RU <-> EN
+        binding.btnSwitchLang.setOnClickListener {
+            currentLanguage = if (currentLanguage == "ru") "en" else "ru"
+            binding.btnSwitchLang.text = if(currentLanguage == "ru") "RU | EN" else "EN | RU"
+            speak(if(currentLanguage == "ru") "Русский язык" else "English language")
+        }
     }
 
-    private fun startCamera() {
+    private fun startCaptureProcess() {
+        speak(if(currentLanguage == "ru") "Включаю камеру" else "Starting camera")
+
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener({
             val cameraProvider = cameraProviderFuture.get()
-            val preview = androidx.camera.core.Preview.Builder().build().also {
-                it.setSurfaceProvider(binding.viewFinder.surfaceProvider)
-            }
+            imageCapture = ImageCapture.Builder().build()
             try {
                 cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(this, androidx.camera.core.CameraSelector.DEFAULT_BACK_CAMERA, preview)
-            } catch (e: Exception) {
-                Toast.makeText(this, "Camera error", Toast.LENGTH_SHORT).show()
-            }
+                cameraProvider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, imageCapture)
+                takePhoto(cameraProvider)
+            } catch (e: Exception) { speak("Error") }
         }, ContextCompat.getMainExecutor(this))
     }
 
-    private fun analyzeScene() {
-        val bitmap = binding.viewFinder.bitmap ?: return
-        binding.btnAnalyze.isEnabled = false
-        binding.tvAiStatus.text = "Analyzing..."
+    private fun takePhoto(cameraProvider: ProcessCameraProvider) {
+        imageCapture?.takePicture(ContextCompat.getMainExecutor(this), object : ImageCapture.OnImageCapturedCallback() {
+            override fun onCaptureSuccess(image: ImageProxy) {
+                val bitmap = imageProxyToBitmap(image)
+                image.close()
+                cameraProvider.unbindAll()
+                speak(if(currentLanguage == "ru") "Анализирую" else "Analyzing")
+                analyzeBitmap(bitmap, null)
+            }
+            override fun onError(e: ImageCaptureException) { cameraProvider.unbindAll() }
+        })
+    }
 
+    private fun analyzeBitmap(bitmap: Bitmap, customUserQuestion: String?) {
         val historyText = contextHistory.takeLast(5).joinToString(". ")
-        val prompt = if (currentLanguage == "kk") {
-            "Контекст: $historyText. Алдыңда не тұрғанын қазақша сипатта."
+        val prompt = if (customUserQuestion == null) {
+            "Context: $historyText. Describe briefly in $currentLanguage what is in front of you."
         } else {
-            "Context: $historyText. Describe what is in front of the camera in English briefly."
+            "Context: $historyText. Answer the question: '$customUserQuestion' in $currentLanguage."
         }
 
         lifecycleScope.launch {
@@ -86,31 +125,74 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     text(prompt)
                 })
                 val result = response.text ?: ""
-                contextHistory.add(result)
+                updateMemory(result)
                 speak(result)
-                binding.tvAiStatus.text = "System: Ready"
-            } catch (e: Exception) {
-                Toast.makeText(this@MainActivity, "AI Error", Toast.LENGTH_SHORT).show()
-            } finally {
-                binding.btnAnalyze.isEnabled = true
-            }
+            } catch (e: Exception) { speak(if(currentLanguage=="ru") "Ошибка" else "Error") }
         }
     }
 
+    private fun processVoiceCommand(command: String) {
+        if (command.lowercase().contains("vision voice") || command.lowercase().contains("сканируй") || command.lowercase().contains("scan")) {
+            startCaptureProcess()
+        } else {
+            startCaptureProcessWithQuestion(command)
+        }
+    }
+
+    private fun startCaptureProcessWithQuestion(question: String) {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+        cameraProviderFuture.addListener({
+            val cameraProvider = cameraProviderFuture.get()
+            imageCapture = ImageCapture.Builder().build()
+            cameraProvider.unbindAll()
+            cameraProvider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, imageCapture)
+
+            imageCapture?.takePicture(ContextCompat.getMainExecutor(this), object : ImageCapture.OnImageCapturedCallback() {
+                override fun onCaptureSuccess(image: ImageProxy) {
+                    val bitmap = imageProxyToBitmap(image)
+                    image.close()
+                    cameraProvider.unbindAll()
+                    analyzeBitmap(bitmap, question)
+                }
+                override fun onError(e: ImageCaptureException) { cameraProvider.unbindAll() }
+            })
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun imageProxyToBitmap(image: ImageProxy): Bitmap {
+        val buffer = image.planes[0].buffer
+        val bytes = ByteArray(buffer.remaining())
+        buffer.get(bytes)
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+    }
+
+    private fun updateMemory(newText: String) {
+        contextHistory.add(newText)
+        totalWordsInMemory += newText.split(" ").size
+        while (totalWordsInMemory > 150 && contextHistory.isNotEmpty()) {
+            val removed = contextHistory.removeAt(0)
+            totalWordsInMemory -= removed.split(" ").size
+        }
+        binding.tvContextMemory.text = "Память: $totalWordsInMemory слов"
+    }
+
     private fun speak(text: String) {
-        tts?.language = if (currentLanguage == "kk") Locale("kk", "KZ") else Locale.US
+        val locale = if (currentLanguage == "ru") Locale("ru", "RU") else Locale.US
+        tts?.setLanguage(locale)
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "")
     }
 
     override fun onInit(status: Int) {
-        if (status == TextToSpeech.SUCCESS) tts?.language = Locale.US
+        if (status == TextToSpeech.SUCCESS) {
+            tts?.setLanguage(Locale("ru", "RU"))
+        }
     }
 
     private fun allPermissionsGranted() = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
 
     override fun onResume() {
         super.onResume()
-        if (intent.getBooleanExtra("auto_analyze", false)) analyzeScene()
+        if (intent.getBooleanExtra("auto_analyze", false)) startCaptureProcess()
     }
 
     override fun onDestroy() {

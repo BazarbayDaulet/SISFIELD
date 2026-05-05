@@ -2,18 +2,34 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Разрешения для интернета и API -->
+    <!-- 1. Разрешения для интернета и API -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Разрешения для зрения и ИИ -->
+    <!-- 2. Разрешения для зрения и ИИ -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <!-- Разрешения для работы в фоне (Wake-word) -->
+    <!-- 3. Разрешения для работы в фоне (Wake-word) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+
+    <!-- Нужно для отображения уведомления службы в Android 13+ -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- 4. Обязательно для работы TTS (озвучки) и распознавания голоса на Android 11+ -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
+
+    <!-- Указываем, что камера не обязательна для установки (чтобы не блокировать девайсы без автофокуса) -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
         android:allowBackup="true"
@@ -26,10 +42,11 @@
         android:theme="@style/Theme.FinalFA"
         tools:targetApi="31">
 
-        <!-- 1. Экран логина - теперь он ПЕРВЫЙ (Launcher) -->
+        <!-- 1. Экран логина - Точка входа (Launcher) -->
         <activity
             android:name=".LoginActivity"
-            android:exported="true">
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -39,19 +56,28 @@
         <!-- 2. Экран регистрации -->
         <activity
             android:name=".RegisterActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
 
-        <!-- 3. Главный экран (Камера и ИИ) -->
+        <!-- 3. Главный экран (Голосовой ИИ) -->
         <activity
             android:name=".MainActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:screenOrientation="portrait" />
 
         <!-- 4. Админ-панель -->
         <activity
             android:name=".AdminActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:label="Панель Администратора" />
 
-        <!-- Фоновая служба для прослушивания ключевого слова (Hey Assistant) -->
+        <!-- 5. Личный кабинет (Профиль) -->
+        <activity
+            android:name=".ProfileActivity"
+            android:exported="false"
+            android:label="Личный кабинет" />
+
+        <!-- Фоновая служба для прослушивания ключевого слова "Vision Voice" -->
         <service
             android:name=".VoiceActivationService"
             android:enabled="true"
